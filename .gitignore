@@ -8,3 +8,5 @@ out/
 # OS specific
 .DS_Store
 Thumbs.db
+judge0-*.md
+
