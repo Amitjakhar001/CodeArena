@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package codearena.execution.v1;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "dev.codearena.proto.execution.v1";
+
+service ExecutionService {
+  // Submit code for execution. Returns immediately with a token;
+  // the actual execution happens async and result is fetched later
+  // (or pushed via NotifyExecutionCompleted callback to App Service).
+  rpc SubmitCode(SubmitCodeRequest) returns (SubmitCodeResponse);
+
+  // Poll for execution result by token.
+  rpc GetExecutionResult(GetExecutionResultRequest) returns (GetExecutionResultResponse);
+
+  // Batch fetch results for history view (App Service uses this to hydrate
+  // a list of submissions with their execution data).
+  rpc GetExecutionResultsBatch(GetExecutionResultsBatchRequest) returns (GetExecutionResultsBatchResponse);
+
+  // List supported languages (cached from Judge0).
+  rpc ListLanguages(codearena.common.v1.Empty) returns (ListLanguagesResponse);
+}
+
+message SubmitCodeRequest {
+  string user_id = 1;
+  string submission_id = 2;        // Mongo ObjectId from App Service, optional
+  int32 language_id = 3;
+  string source_code = 4;
+  string stdin = 5;
+  string expected_output = 6;       // optional, used for ACCEPTED/WRONG_ANSWER comparison
+  double cpu_time_limit_seconds = 7;
+  int32 memory_limit_kb = 8;
+}
+
+message SubmitCodeResponse {
+  string execution_token = 1;       // Judge0's token, opaque to App Service
+  string status = 2;                // "QUEUED" on submission
+}
+
+message GetExecutionResultRequest {
+  string execution_token = 1;
+  string requesting_user_id = 2;    // for ownership check
+}
+
+message GetExecutionResultResponse {
+  bool found = 1;
+  ExecutionResult result = 2;
+}
+
+message GetExecutionResultsBatchRequest {
+  repeated string execution_tokens = 1;
+  string requesting_user_id = 2;
+}
+
+message GetExecutionResultsBatchResponse {
+  repeated ExecutionResult results = 1;
+}
+
+message ExecutionResult {
+  string execution_token = 1;
+  string status = 2;                // "PENDING" | "ACCEPTED" | "WRONG_ANSWER" | "TIME_LIMIT_EXCEEDED" | "COMPILATION_ERROR" | "RUNTIME_ERROR"
+  string status_description = 3;
+  string stdout = 4;
+  string stderr = 5;
+  string compile_output = 6;
+  int32 time_ms = 7;
+  int32 memory_kb = 8;
+  int64 created_at_epoch_seconds = 9;
+  int64 completed_at_epoch_seconds = 10;
+}
+
+message ListLanguagesResponse {
+  repeated Language languages = 1;
+}
+
+message Language {
+  int32 id = 1;
+  string name = 2;
+  bool is_active = 3;
+}
