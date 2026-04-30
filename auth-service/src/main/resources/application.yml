@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: auth-service
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/auth_db}
+      auto-index-creation: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+grpc:
+  server:
+    port: ${GRPC_PORT:9090}
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-at-least-32-chars-long-please-change-me}
+  issuer: codearena-auth
+  access-token-ttl-minutes: 15
+  refresh-token-ttl-days: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    dev.codearena.auth: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  data:
+    mongodb:
+      uri: mongodb://mongodb:27017/auth_db
