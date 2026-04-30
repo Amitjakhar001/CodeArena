@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package codearena.auth.v1;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "dev.codearena.proto.auth.v1";
+
+service AuthInternal {
+  // Called by App Service and Execution Service to validate tokens
+  // when they need to verify a user beyond what the gateway already did.
+  // Most calls go through gateway-trusted X-User-Id headers; this is
+  // for cases where deeper validation is needed (e.g., admin actions).
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // Lightweight user lookup for cross-service display name resolution.
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool valid = 1;
+  codearena.common.v1.UserContext user = 2;
+  int64 expires_at_epoch_seconds = 3;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  bool found = 1;
+  codearena.common.v1.UserContext user = 2;
+}

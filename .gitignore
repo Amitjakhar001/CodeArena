@@ -1,12 +1,54 @@
-# IntelliJ IDEA
+# ─── Java / Maven ────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+!.mvn/wrapper/maven-wrapper.jar
+mvnw
+mvnw.cmd
+hs_err_pid*
+replay_pid*
+
+# ─── Generated gRPC / protobuf stubs ─────────────────────────────
+**/generated-sources/
+**/generated/
+
+# ─── Node / Next.js ──────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+.npm/
+*.tsbuildinfo
+.eslintcache
+
+# ─── IDE ─────────────────────────────────────────────────────────
 .idea/
 *.iml
 *.iws
 *.ipr
-out/
+.vscode/
+*.code-workspace
 
-# OS specific
+# ─── OS ──────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-judge0-*.md
 
+# ─── Logs ────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Env / secrets ───────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ─── Docker / build artefacts ────────────────────────────────────
+.docker/

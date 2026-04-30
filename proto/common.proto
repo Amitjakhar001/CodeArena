@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package codearena.common.v1;
+
+option java_multiple_files = true;
+option java_package = "dev.codearena.proto.common.v1";
+
+message UserContext {
+  string user_id = 1;
+  string username = 2;
+  string role = 3;
+}
+
+message Empty {}
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+  string correlation_id = 3;
+}
