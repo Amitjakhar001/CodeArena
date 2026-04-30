@@ -1,0 +1,109 @@
+### Phase 1 — Auth Service smoke test (reads env from http-client.env.json)
+### Run top-to-bottom against the local profile to verify the full flow.
+
+### 1. Register a new user → 201 + tokens
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "alice@example.com",
+  "username": "alice",
+  "password": "supersecret123"
+}
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
+### 2. Login by email → 200 + new tokens
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "alice@example.com",
+  "password": "supersecret123"
+}
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
+### 3. Login by username → 200
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "alice",
+  "password": "supersecret123"
+}
+
+### 4. Login with wrong password → 401
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "alice",
+  "password": "wrong-password"
+}
+
+### 5. /auth/me using bearer token → 200
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+### 6. /auth/me using X-User-Id (gateway-style) → 200
+# Replace the userId below with the id returned in step 1's response.
+# GET {{baseUrl}}/auth/me
+# X-User-Id: <userId>
+
+### 7. Refresh access token → 200
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+%}
+
+### 8. Logout (revoke refresh token) → 204
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### 9. Refresh after logout → 401 (token revoked)
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### 10. Register with duplicate email → 409
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "alice@example.com",
+  "username": "alice2",
+  "password": "anotherpass123"
+}
+
+### 11. Register with invalid email → 400 with validation errors
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "not-an-email",
+  "username": "bob",
+  "password": "short"
+}
+
+### 12. Health check → 200
+GET {{baseUrl}}/actuator/health
