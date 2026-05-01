@@ -1,0 +1,55 @@
+### Phase 3 — Execution Service smoke tests
+###
+### These hit the webhook + actuator endpoints directly. The 4 gRPC RPCs
+### (SubmitCode, GetExecutionResult, GetExecutionResultsBatch, ListLanguages)
+### get exercised by App Service in Phase 4 and by a standalone gRPC client
+### during Phase 3 verification (see roadmap §Phase 3 checkpoint).
+###
+### Prerequisites:
+###   - Judge0 reachable via `make judge0-tunnel` (Phase 2)
+###   - Postgres up:    docker compose -f infra/docker/docker-compose.execution.yml up -d
+###   - Service up:     mvn -pl execution-service spring-boot:run
+###
+
+### 1. Health
+GET http://localhost:8081/actuator/health
+
+### 2. Webhook — simulate Judge0 callback (replace {{token}} with a real one).
+###    Use this to verify the webhook handler updates the row even without a
+###    real Judge0 callback firing.
+PUT http://localhost:8081/webhook/judge0/{{token}}
+Content-Type: application/json
+
+{
+  "token": "{{token}}",
+  "stdout": "hello\n",
+  "stderr": null,
+  "compile_output": null,
+  "time": "0.012",
+  "memory": 3520,
+  "exit_code": 0,
+  "status": { "id": 3, "description": "Accepted" }
+}
+
+### 3. Webhook — runtime error variant
+PUT http://localhost:8081/webhook/judge0/{{token}}
+Content-Type: application/json
+
+{
+  "token": "{{token}}",
+  "stdout": null,
+  "stderr": "ZeroDivisionError: division by zero\n",
+  "compile_output": null,
+  "time": "0.008",
+  "memory": 3300,
+  "exit_code": 1,
+  "status": { "id": 11, "description": "Runtime Error (NZEC)" }
+}
+
+### 4. Webhook — unknown token (expect 404)
+PUT http://localhost:8081/webhook/judge0/does-not-exist
+Content-Type: application/json
+
+{
+  "status": { "id": 3, "description": "Accepted" }
+}
