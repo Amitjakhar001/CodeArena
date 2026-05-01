@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS executions (
   user_id             VARCHAR(64) NOT NULL,
   submission_id       VARCHAR(64),
   language_id         INTEGER NOT NULL REFERENCES execution_languages(id),
-  source_code_hash    CHAR(64) NOT NULL,
+  source_code_hash VARCHAR(64) NOT NULL,
   stdin               TEXT,
   expected_output     TEXT,
   cpu_time_limit      NUMERIC(5,2) NOT NULL DEFAULT 5.0,

@@ -53,3 +53,13 @@ Content-Type: application/json
 {
   "status": { "id": 3, "description": "Accepted" }
 }
+
+
+### 5. Generate a REAL token via gRPC
+GRPC localhost:9091/codearena.execution.v1.ExecutionService/SubmitCode
+
+{
+  "user_id": "test-user-123",
+  "language_id": 71,
+  "source_code": "print('Hello from gRPC test!')"
+}

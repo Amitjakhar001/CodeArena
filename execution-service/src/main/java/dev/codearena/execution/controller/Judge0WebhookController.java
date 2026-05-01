@@ -35,15 +35,14 @@ public class Judge0WebhookController {
     }
 
     @PutMapping("/{token}")
-    public ResponseEntity<Void> putCallback(@PathVariable String token, @RequestBody Judge0Submission payload) {
+    public ResponseEntity<Void> putCallback(@PathVariable("token") String token, @RequestBody Judge0Submission payload) {
         return apply(token, payload);
     }
 
     @PostMapping("/{token}")
-    public ResponseEntity<Void> postCallback(@PathVariable String token, @RequestBody Judge0Submission payload) {
+    public ResponseEntity<Void> postCallback(@PathVariable("token") String token, @RequestBody Judge0Submission payload) {
         return apply(token, payload);
     }
-
     private ResponseEntity<Void> apply(String token, Judge0Submission payload) {
         try {
             executions.applyJudge0Result(token, payload);

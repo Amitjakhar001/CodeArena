@@ -55,3 +55,4 @@ infra/docker/.env*
 # ─── Docker / build artefacts ────────────────────────────────────
 .docker/
 /docs/phase2-gcp-terminal-outputs
+/docs/phase3-testing-terminal
