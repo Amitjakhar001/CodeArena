@@ -51,6 +51,36 @@ mvn validate     # Phase 0: confirms parent POM is well-formed
 make help        # See available targets
 ```
 
+## Phase 2 — Judge0 on GCP (Path A)
+
+Judge0 runs on a dedicated GCP VM (`codearena-vm2`) reachable from your laptop only via Identity-Aware Proxy. No external IP, no public ports.
+
+```bash
+# 1. One-time setup (Fedora workstation)
+make gcloud-install
+gcloud auth login
+gcloud projects list                  # find your real project ID
+export GCP_PROJECT_ID=<your-id>
+
+# 2. Enable GCP APIs (one-time per project)
+make gcp-preflight GCP_PROJECT_ID=$GCP_PROJECT_ID
+
+# 3. Provision VM 2 — installs Docker, applies cgroup v1 fix, reboots once
+make judge0-provision GCP_PROJECT_ID=$GCP_PROJECT_ID
+# wait ~3 minutes for the reboot cycle
+
+# 4. Deploy Judge0 stack (generates random DB/Redis passwords on first run)
+make judge0-deploy GCP_PROJECT_ID=$GCP_PROJECT_ID
+
+# 5. Open the IAP tunnel (leave running in a terminal)
+make judge0-tunnel
+# in another terminal:
+curl http://localhost:2358/about
+# or run http/judge0-direct.http top-to-bottom
+```
+
+Between dev sessions, stop the containers (`make judge0-stop`) or fully tear down (`make judge0-teardown`) to stop billing.
+
 ## Documentation
 
 - [Architecture Blueprint](docs/architecture.md) — what we're building and why

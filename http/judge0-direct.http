@@ -1,0 +1,88 @@
+### Phase 2 — direct Judge0 smoke test
+### Open the IAP tunnel first:  make judge0-tunnel
+### Then run these top-to-bottom against the `local` env.
+
+### 1. Metadata — confirms tunnel + Judge0 is up
+GET {{judge0Url}}/about
+
+### 2. Supported languages — populates the Phase 4 language dropdown
+GET {{judge0Url}}/languages
+
+### 3. Synchronous Python hello-world (waits for the result)
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,stderr,status,time,memory,token
+Content-Type: application/json
+
+{
+  "source_code": "print('Hello, CodeArena')",
+  "language_id": 71,
+  "stdin": ""
+}
+
+### 4. Async submission — returns a token; results fetched in step 5
+POST {{judge0Url}}/submissions?base64_encoded=false
+Content-Type: application/json
+
+{
+  "source_code": "name = input()\nprint(f'Hi {name}')",
+  "language_id": 71,
+  "stdin": "Alice"
+}
+
+> {%
+    client.global.set("judge0Token", response.body.token);
+%}
+
+### 5. Poll for the async result (run a couple of times if status is "In Queue")
+GET {{judge0Url}}/submissions/{{judge0Token}}?base64_encoded=false&fields=stdout,stderr,status,time,memory,token
+
+### 6. Java hello-world — exercises a heavier compile path
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,stderr,status,time,memory
+Content-Type: application/json
+
+{
+  "source_code": "public class Main { public static void main(String[] a) { System.out.println(\"Hi from Java\"); } }",
+  "language_id": 62,
+  "stdin": ""
+}
+
+### 7. Intentional runtime error — should return RUNTIME_ERROR with stderr
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,stderr,status,time,memory
+Content-Type: application/json
+
+{
+  "source_code": "print(1/0)",
+  "language_id": 71,
+  "stdin": ""
+}
+
+### 8. Intentional compile error — should return COMPILATION_ERROR with compile_output
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,stderr,compile_output,status,time,memory
+Content-Type: application/json
+
+{
+  "source_code": "prit('typo')",
+  "language_id": 71,
+  "stdin": ""
+}
+
+### 9. Submission with expected_output match → ACCEPTED
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,status,time,memory
+Content-Type: application/json
+
+{
+  "source_code": "print(2 + 3)",
+  "language_id": 71,
+  "stdin": "",
+  "expected_output": "5\n"
+}
+
+### 10. Same code, mismatched expected_output → WRONG_ANSWER
+POST {{judge0Url}}/submissions?wait=true&base64_encoded=false&fields=stdout,status,time,memory
+Content-Type: application/json
+
+{
+  "source_code": "print(2 + 3)",
+  "language_id": 71,
+  "stdin": "",
+  "expected_output": "42\n"
+}
