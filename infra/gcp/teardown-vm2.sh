@@ -22,6 +22,28 @@ echo "→ Deleting VM..."
 gcloud compute instances delete "$VM_NAME" \
   --zone="$ZONE" --project="$PROJECT_ID" --quiet || true
 
+# Cloud NAT must be deleted before its router, and the router before the
+# subnet/network it lives on. Each step is best-effort idempotent.
+if gcloud compute routers nats describe codearena-nat \
+     --router=codearena-router --router-region="$REGION" \
+     --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "→ Deleting Cloud NAT..."
+  gcloud compute routers nats delete codearena-nat \
+    --router=codearena-router --router-region="$REGION" \
+    --project="$PROJECT_ID" --quiet || true
+else
+  echo "✓ Cloud NAT already absent"
+fi
+
+if gcloud compute routers describe codearena-router \
+     --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "→ Deleting Cloud Router..."
+  gcloud compute routers delete codearena-router \
+    --region="$REGION" --project="$PROJECT_ID" --quiet || true
+else
+  echo "✓ Cloud Router already absent"
+fi
+
 echo "→ Deleting firewall rules..."
 gcloud compute firewall-rules delete \
   codearena-allow-iap codearena-allow-internal \

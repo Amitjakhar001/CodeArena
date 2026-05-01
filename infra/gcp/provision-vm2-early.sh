@@ -4,11 +4,16 @@
 # What it creates (all idempotent — safe to re-run):
 #   - VPC network    `codearena-net`
 #   - Subnet         `codearena-subnet` (10.0.0.0/24, asia-south1)
+#   - Cloud Router   `codearena-router`           — needed by Cloud NAT
+#   - Cloud NAT      `codearena-nat`              — outbound internet for the VM
+#                                                   (apt mirrors, Docker Hub, …)
+#                                                   since VMs have --no-address.
 #   - Firewall       `codearena-allow-iap`        — IAP CIDR → tcp:22, tcp:2358
 #   - Firewall       `codearena-allow-internal`   — VPC-internal traffic
 #   - VM instance    `codearena-vm2` (e2-medium, Ubuntu 22.04 LTS, 30 GB pd-balanced)
-#                    Startup script installs Docker + applies the cgroup v1 GRUB
-#                    edit + reboots once. No external IP — IAP tunnel only.
+#                    Startup script installs Docker CE from Docker's official apt
+#                    repo, applies the cgroup v1 fix via a GRUB drop-in file,
+#                    reboots once. No external IP — IAP tunnel only.
 #
 # The full 3-VM topology lives in Phase 8. This script is the slimmed-down
 # version per docs/roadmap.md Phase 2 Path A.
@@ -23,6 +28,8 @@ REGION="${GCP_REGION:-asia-south1}"
 ZONE="${GCP_ZONE:-asia-south1-a}"
 NETWORK="codearena-net"
 SUBNET="codearena-subnet"
+ROUTER="codearena-router"
+NAT="codearena-nat"
 VM_NAME="codearena-vm2"
 MACHINE_TYPE="e2-medium"
 
@@ -51,6 +58,36 @@ else
     --network="$NETWORK" \
     --region="$REGION" \
     --range=10.0.0.0/24
+fi
+
+# ─── Cloud Router + Cloud NAT ────────────────────────────────────────
+# Without these, a VM created with --no-address has no path to the public
+# internet, so apt-get update / Docker Hub pulls fail silently or partially.
+# Cloud NAT gives the VM outbound-only access through Google's NAT gateway;
+# inbound is still IAP-only.
+if gcloud compute routers describe "$ROUTER" \
+     --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "✓ Cloud Router $ROUTER already exists"
+else
+  echo "→ Creating Cloud Router $ROUTER..."
+  gcloud compute routers create "$ROUTER" \
+    --project="$PROJECT_ID" \
+    --network="$NETWORK" \
+    --region="$REGION"
+fi
+
+if gcloud compute routers nats describe "$NAT" \
+     --router="$ROUTER" --router-region="$REGION" \
+     --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "✓ Cloud NAT $NAT already exists"
+else
+  echo "→ Creating Cloud NAT $NAT..."
+  gcloud compute routers nats create "$NAT" \
+    --project="$PROJECT_ID" \
+    --router="$ROUTER" \
+    --router-region="$REGION" \
+    --auto-allocate-nat-external-ips \
+    --nat-all-subnet-ip-ranges
 fi
 
 # ─── Firewall ────────────────────────────────────────────────────────
@@ -91,20 +128,59 @@ if [ -f "$MARKER" ]; then
   exit 0
 fi
 
-# 1. Docker
+# 1. Docker — install Docker CE from Docker's official apt repo.
+#    Ubuntu's docker.io was unreliable on a fresh VM (the package list
+#    wasn't always populated when startup-script ran), and ships Compose v1
+#    by default. Docker CE gives us docker-compose-plugin (Compose v2) which
+#    is what every compose file in this repo expects.
+export DEBIAN_FRONTEND=noninteractive
+
+# Wait for any background apt operations (cloud-init, unattended-upgrades)
+# to finish so we don't deadlock on the dpkg lock.
+for i in $(seq 1 60); do
+  if ! pgrep -x apt-get >/dev/null && ! pgrep -x dpkg >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
 apt-get update
-apt-get install -y docker.io docker-compose-plugin
+apt-get install -y ca-certificates curl gnupg lsb-release
+
+install -m 0755 -d /etc/apt/keyrings
+if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  chmod a+r /etc/apt/keyrings/docker.gpg
+fi
+
+CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+ARCH=$(dpkg --print-architecture)
+echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt-get update
+apt-get install -y \
+  docker-ce \
+  docker-ce-cli \
+  containerd.io \
+  docker-buildx-plugin \
+  docker-compose-plugin
+
 systemctl enable --now docker
 usermod -aG docker ubuntu || true
 
-# 2. Cgroup v1 GRUB edit (Judge0's isolate engine requires v1)
-GRUB=/etc/default/grub
-PARAMS='systemd.unified_cgroup_hierarchy=0 systemd.legacy_systemd_cgroup_controller=1'
-if ! grep -q 'systemd.unified_cgroup_hierarchy=0' "$GRUB"; then
-  cp "$GRUB" "${GRUB}.bak.$(date +%s)"
-  sed -i "s|GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"|GRUB_CMDLINE_LINUX_DEFAULT=\"\1 ${PARAMS}\"|" "$GRUB"
-  update-grub
-fi
+# 2. Cgroup v1 — Judge0's isolate engine requires the v1 hierarchy.
+#    Drop a file into /etc/default/grub.d/ instead of editing the main grub
+#    config; the drop-in is sourced after /etc/default/grub by update-grub
+#    and uses GRUB_CMDLINE_LINUX (applies to all kernel entries, including
+#    recovery), which is the right knob for boot-time kernel parameters.
+mkdir -p /etc/default/grub.d
+cat > /etc/default/grub.d/99-cgroup.cfg <<'GRUB_EOF'
+# Force cgroup v1 hierarchy for Judge0's isolate sandbox.
+GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX systemd.unified_cgroup_hierarchy=0 systemd.legacy_systemd_cgroup_controller=1"
+GRUB_EOF
+update-grub
 
 touch "$MARKER"
 echo "Bootstrap complete; rebooting into cgroup v1 in 60s..."
@@ -137,8 +213,8 @@ cat <<NEXT
 ✓ VM is being provisioned.
 
 The startup script:
-  1. Installs Docker  (~30 s)
-  2. Applies the cgroup v1 GRUB edit
+  1. Installs Docker CE from Docker's official apt repo (~60 s)
+  2. Applies the cgroup v1 fix via /etc/default/grub.d/99-cgroup.cfg
   3. Reboots in 60 s
 
 Wait ~3 minutes total, then verify cgroup v1 took effect:
