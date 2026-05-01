@@ -1,11 +1,49 @@
-.PHONY: help dev logs seed test teardown clean validate
+.PHONY: help dev logs seed test teardown clean validate \
+        gcloud-install gcp-preflight \
+        judge0-provision judge0-deploy judge0-tunnel judge0-ssh judge0-stop judge0-teardown
+
+GCP_PROJECT_ID ?=
+GCP_ZONE       ?= asia-south1-a
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 validate: ## Validate the parent POM and module wiring
 	mvn -B validate
 
+# ─── Phase 2: Judge0 on GCP VM 2 (Path A) ──────────────────────────────
+gcloud-install: ## Phase 2: install gcloud CLI on Fedora (one-time)
+	bash infra/gcp/install-gcloud-fedora.sh
+
+gcp-preflight: ## Phase 2: enable GCP APIs (requires GCP_PROJECT_ID)
+	@test -n "$(GCP_PROJECT_ID)" || (echo "Set GCP_PROJECT_ID — see infra/gcp/setup-preflight.sh" && exit 1)
+	GCP_PROJECT_ID=$(GCP_PROJECT_ID) bash infra/gcp/setup-preflight.sh
+
+judge0-provision: ## Phase 2: provision GCP VM 2 with Docker + cgroup v1 fix
+	@test -n "$(GCP_PROJECT_ID)" || (echo "Set GCP_PROJECT_ID" && exit 1)
+	GCP_PROJECT_ID=$(GCP_PROJECT_ID) GCP_ZONE=$(GCP_ZONE) bash infra/gcp/provision-vm2-early.sh
+
+judge0-deploy: ## Phase 2: scp compose + start Judge0 stack on VM 2
+	@test -n "$(GCP_PROJECT_ID)" || (echo "Set GCP_PROJECT_ID" && exit 1)
+	GCP_PROJECT_ID=$(GCP_PROJECT_ID) GCP_ZONE=$(GCP_ZONE) bash infra/gcp/deploy-judge0-vm2.sh
+
+judge0-tunnel: ## Phase 2: open IAP tunnel localhost:2358 -> VM 2 (foreground)
+	gcloud compute start-iap-tunnel codearena-vm2 2358 \
+		--local-host-port=localhost:2358 \
+		--zone=$(GCP_ZONE)
+
+judge0-ssh: ## Phase 2: SSH into VM 2 via IAP
+	gcloud compute ssh codearena-vm2 --zone=$(GCP_ZONE) --tunnel-through-iap
+
+judge0-stop: ## Phase 2: stop Judge0 containers on VM 2 (data preserved)
+	gcloud compute ssh codearena-vm2 --zone=$(GCP_ZONE) --tunnel-through-iap \
+		--command="cd ~ && sudo docker compose -f docker-compose.judge0.yml down"
+
+judge0-teardown: ## Phase 2: DESTRUCTIVE — delete VM 2 + VPC (stops billing)
+	@test -n "$(GCP_PROJECT_ID)" || (echo "Set GCP_PROJECT_ID" && exit 1)
+	GCP_PROJECT_ID=$(GCP_PROJECT_ID) GCP_ZONE=$(GCP_ZONE) bash infra/gcp/teardown-vm2.sh
+
+# ─── Future phases (placeholders) ──────────────────────────────────────
 dev: ## TODO(phase-7): bring up the full local stack via docker compose
 	@echo "Not implemented yet — wired up in Phase 7."
 
