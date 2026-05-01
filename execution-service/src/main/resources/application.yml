@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: execution-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/execution_db}
+    username: ${DB_USER:execution}
+    password: ${DB_PASS:dev-password-change-in-prod}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      # Schema is owned by infra/docker/postgres-init.sql, not Hibernate.
+      ddl-auto: validate
+    properties:
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+
+server:
+  port: ${SERVER_PORT:8081}
+
+grpc:
+  server:
+    port: ${GRPC_PORT:9091}
+
+judge0:
+  base-url: ${JUDGE0_BASE_URL:http://localhost:2358}
+  webhook-base-url: ${WEBHOOK_BASE_URL:http://localhost:8081}
+  connect-timeout-ms: ${JUDGE0_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${JUDGE0_READ_TIMEOUT_MS:30000}
+  recovery-stuck-seconds: ${JUDGE0_RECOVERY_STUCK_SECONDS:30}
+  recovery-poll-interval-ms: ${JUDGE0_RECOVERY_POLL_INTERVAL_MS:30000}
+  recovery-poll-initial-delay-ms: ${JUDGE0_RECOVERY_POLL_INITIAL_DELAY_MS:30000}
+  language-sync-cron: ${JUDGE0_LANGUAGE_SYNC_CRON:0 0 3 * * *}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    dev.codearena.execution: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:postgresql://execution-postgres:5432/execution_db
+
+server:
+  port: 8080
+
+grpc:
+  server:
+    port: 9090
+
+judge0:
+  base-url: ${JUDGE0_BASE_URL:http://nginx-internal:8000}
+  webhook-base-url: ${WEBHOOK_BASE_URL:http://execution-service:8080}

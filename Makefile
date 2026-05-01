@@ -1,6 +1,7 @@
 .PHONY: help dev logs seed test teardown clean validate \
         gcloud-install gcp-preflight \
-        judge0-provision judge0-deploy judge0-tunnel judge0-ssh judge0-stop judge0-teardown
+        judge0-provision judge0-deploy judge0-tunnel judge0-ssh judge0-stop judge0-teardown \
+        execution-db-up execution-db-down execution-db-reset execution-run execution-build
 
 GCP_PROJECT_ID ?=
 GCP_ZONE       ?= asia-south1-a
@@ -42,6 +43,22 @@ judge0-stop: ## Phase 2: stop Judge0 containers on VM 2 (data preserved)
 judge0-teardown: ## Phase 2: DESTRUCTIVE — delete VM 2 + VPC (stops billing)
 	@test -n "$(GCP_PROJECT_ID)" || (echo "Set GCP_PROJECT_ID" && exit 1)
 	GCP_PROJECT_ID=$(GCP_PROJECT_ID) GCP_ZONE=$(GCP_ZONE) bash infra/gcp/teardown-vm2.sh
+
+# ─── Phase 3: Execution Service ────────────────────────────────────────
+execution-db-up: ## Phase 3: start Postgres for the Execution Service
+	docker compose -f infra/docker/docker-compose.execution.yml up -d
+
+execution-db-down: ## Phase 3: stop Postgres (data preserved)
+	docker compose -f infra/docker/docker-compose.execution.yml down
+
+execution-db-reset: ## Phase 3: stop Postgres AND wipe volume (forces init.sql to re-run)
+	docker compose -f infra/docker/docker-compose.execution.yml down -v
+
+execution-build: ## Phase 3: compile execution-service (regenerates gRPC stubs)
+	mvn -B -pl execution-service -am package -DskipTests
+
+execution-run: ## Phase 3: run execution-service locally (requires DB up + judge0 tunnel)
+	mvn -pl execution-service spring-boot:run
 
 # ─── Future phases (placeholders) ──────────────────────────────────────
 dev: ## TODO(phase-7): bring up the full local stack via docker compose

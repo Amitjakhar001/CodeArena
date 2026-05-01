@@ -1,0 +1,30 @@
+# Phase 3 dev stack — execution-service + its Postgres.
+#
+# Use this alongside the Judge0 IAP tunnel from Phase 2:
+#   make judge0-tunnel   (forwards localhost:2358 → VM 2)
+#   docker compose -f infra/docker/docker-compose.execution.yml up -d
+#
+# In Phase 7 this gets folded into the master docker-compose.local.yml.
+
+services:
+  execution-postgres:
+    image: postgres:16
+    container_name: codearena-execution-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: execution
+      POSTGRES_PASSWORD: dev-password-change-in-prod
+      POSTGRES_DB: execution_db
+    volumes:
+      - execution-postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U execution -d execution_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  execution-postgres-data:
