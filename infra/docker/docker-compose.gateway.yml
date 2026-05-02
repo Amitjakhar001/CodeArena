@@ -1,0 +1,30 @@
+# Phase 5 dev stack — Redis for the gateway's RequestRateLimiter.
+#
+# Intentionally separate from Judge0's internal Redis: that one is a queue
+# for execution workers and shouldn't share a load profile with rate-limit
+# accounting. Keeping them separate also lets each scale independently in
+# Phase 8.
+#
+# Use:
+#   make gateway-redis-up
+#   then run api-gateway from IntelliJ (default profile, port 8080)
+#
+# In Phase 7 this gets folded into the master docker-compose.local.yml.
+
+services:
+  gateway-redis:
+    image: redis:7-alpine
+    container_name: codearena-gateway-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - gateway-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  gateway-redis-data:

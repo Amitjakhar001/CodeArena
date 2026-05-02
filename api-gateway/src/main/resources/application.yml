@@ -1,0 +1,103 @@
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  cloud:
+    gateway:
+      default-filters:
+        # Reactor Netty drops some hop-by-hop headers; this keeps Host stable.
+        - PreserveHostHeader
+
+      routes:
+        # Auth endpoints — public bypass list inside JwtAuthenticationFilter
+        # handles which paths actually require a token; here we just route.
+        - id: auth-route
+          uri: ${AUTH_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            # Strip /api/v1 (2 segments) so /api/v1/auth/login becomes /auth/login.
+            - StripPrefix=2
+            - name: RequestRateLimiter
+              args:
+
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 1
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
+        # App service — everything authenticated.
+        # No StripPrefix here: app-service controllers are mapped at /api/v1/...
+        # natively, so the gateway forwards the path through unchanged.
+        - id: app-route
+          uri: ${APP_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                # 60 req / 60s per user. Burst of 120.
+                redis-rate-limiter.replenishRate: 60
+                redis-rate-limiter.burstCapacity: 120
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+
+server:
+  port: ${SERVER_PORT:8080}
+
+jwt:
+  # Must match auth-service's signing secret. Same env var name there.
+  secret: ${JWT_SECRET:dev-secret-at-least-32-chars-long-please-change-me}
+  issuer: codearena-auth
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    dev.codearena.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  data:
+    redis:
+      host: gateway-redis
+      port: 6379
+  cloud:
+    gateway:
+      routes:
+        - id: auth-route
+          uri: http://auth-service:8080
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - StripPrefix=2
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                key-resolver: "#{@ipKeyResolver}"
+        - id: app-route
+          uri: http://app-service:8080
+          predicates:
+            - Path=/api/v1/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 60
+                redis-rate-limiter.burstCapacity: 120
+                key-resolver: "#{@userKeyResolver}"
