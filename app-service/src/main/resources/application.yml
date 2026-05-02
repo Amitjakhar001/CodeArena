@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: app-service
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27018/app_db}
+      auto-index-creation: true
+
+server:
+  port: ${SERVER_PORT:8082}
+
+grpc:
+  client:
+    execution-service:
+      address: ${EXECUTION_GRPC_ADDRESS:static://localhost:9091}
+      negotiation-type: plaintext
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+    auth-service:
+      address: ${AUTH_GRPC_ADDRESS:static://localhost:9090}
+      negotiation-type: plaintext
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    dev.codearena.app: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  data:
+    mongodb:
+      uri: mongodb://mongodb:27017/app_db
+
+server:
+  port: 8080
+
+grpc:
+  client:
+    execution-service:
+      address: static://execution-service:9090
+    auth-service:
+      address: static://auth-service:9090

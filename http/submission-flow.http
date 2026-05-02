@@ -1,0 +1,137 @@
+### Phase 4 — App Service end-to-end smoke test
+###
+### Hits the full submission lifecycle:
+###   register/login on auth-service → list problems → submit → poll → list → stats
+###
+### Prerequisites:
+###   - make app-db-up        (MongoDB for app_db)
+###   - make execution-db-up  (Postgres for execution_db)
+###   - make judge0-tunnel    (Judge0 reachable on localhost:2358)
+###   - auth-service running on :8080
+###   - execution-service running on :8081 / gRPC :9091
+###   - app-service running on :8082
+###   - make app-seed         (seed sample problems)
+###
+### App Service trusts the X-User-Id header — gateway sets this in Phase 5.
+### For now we set it manually using the userId returned by /auth/me.
+
+### 1. Register a fresh user (idempotent if already registered → expect 409, then login)
+POST {{authUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "phase4tester@example.com",
+  "username": "phase4tester",
+  "password": "supersecret123"
+}
+
+> {%
+    if (response.status === 201) {
+      client.global.set("accessToken", response.body.accessToken);
+      client.global.set("refreshToken", response.body.refreshToken);
+    }
+%}
+
+### 2. Login (works whether or not register just happened)
+POST {{authUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "phase4tester@example.com",
+  "password": "supersecret123"
+}
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
+### 3. /auth/me — capture userId for the X-User-Id header
+GET {{authUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("userId", response.body.id);
+%}
+
+### 4. List problems → 200 with seeded data
+GET {{appUrl}}/api/v1/problems
+
+> {%
+    client.global.set("problemId", response.body[0].id);
+    client.global.set("problemSlug", response.body[0].slug);
+%}
+
+### 5. Get problem detail
+GET {{appUrl}}/api/v1/problems/{{problemSlug}}
+
+### 6. List languages (proxied to Execution Service via gRPC)
+GET {{appUrl}}/api/v1/languages
+
+### 7. Submit Python "hello world" → 202 with submissionId
+POST {{appUrl}}/api/v1/submissions
+Content-Type: application/json
+X-User-Id: {{userId}}
+
+{
+  "problemId": "{{problemId}}",
+  "languageId": 71,
+  "sourceCode": "print('Hello from Phase 4 submission')",
+  "customStdin": null
+}
+
+> {%
+    client.global.set("submissionId", response.body.submissionId);
+%}
+
+### 8. Poll submission — repeats this until latestStatus is terminal
+###    (Run a few times; Judge0 turn-around is usually 1-3s)
+GET {{appUrl}}/api/v1/submissions/{{submissionId}}
+X-User-Id: {{userId}}
+
+### 9. List my submissions (paginated, newest first)
+GET {{appUrl}}/api/v1/submissions?page=0&size=20
+X-User-Id: {{userId}}
+
+### 10. List my submissions for this problem only
+GET {{appUrl}}/api/v1/submissions?problemId={{problemId}}
+X-User-Id: {{userId}}
+
+### 11. Stats — should reflect the completed submission(s)
+GET {{appUrl}}/api/v1/users/me/stats
+X-User-Id: {{userId}}
+
+### 12. Playground submission (no problemId)
+POST {{appUrl}}/api/v1/submissions
+Content-Type: application/json
+X-User-Id: {{userId}}
+
+{
+  "problemId": null,
+  "languageId": 71,
+  "sourceCode": "import sys\nfor line in sys.stdin: print(line.strip().upper())",
+  "customStdin": "hello\nworld"
+}
+
+### 13. Missing X-User-Id header → 401
+POST {{appUrl}}/api/v1/submissions
+Content-Type: application/json
+
+{
+  "languageId": 71,
+  "sourceCode": "print('no auth')"
+}
+
+### 14. Unsupported language for problem → 400
+POST {{appUrl}}/api/v1/submissions
+Content-Type: application/json
+X-User-Id: {{userId}}
+
+{
+  "problemId": "{{problemId}}",
+  "languageId": 99999,
+  "sourceCode": "x"
+}
+
+### 15. Health
+GET {{appUrl}}/actuator/health

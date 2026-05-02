@@ -3,7 +3,7 @@ spring:
     name: auth-service
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/auth_db}
+      uri: ${MONGODB_URI:mongodb://localhost:27018/auth_db}
       auto-index-creation: true
 
 server:
