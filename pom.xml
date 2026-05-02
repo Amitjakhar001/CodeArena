@@ -22,6 +22,7 @@
     <modules>
         <module>auth-service</module>
         <module>execution-service</module>
+        <module>app-service</module>
     </modules>
 
     <properties>
@@ -116,6 +117,14 @@
                     <version>3.13.0</version>
                     <configuration>
                         <release>${java.version}</release>
+                        <!--
+                            Required so Spring MVC can resolve @PathVariable / @RequestParam
+                            arg names via reflection. Without this, bytecode has arg0/arg1
+                            and binding fails with "parameter name information not available
+                            via reflection" at request time. spring-boot-starter-parent enables
+                            this by default; we use a custom parent so we set it explicitly.
+                        -->
+                        <parameters>true</parameters>
                     </configuration>
                 </plugin>
                 <plugin>

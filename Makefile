@@ -1,7 +1,8 @@
 .PHONY: help dev logs seed test teardown clean validate \
         gcloud-install gcp-preflight \
         judge0-provision judge0-deploy judge0-tunnel judge0-ssh judge0-stop judge0-teardown \
-        execution-db-up execution-db-down execution-db-reset execution-run execution-build
+        execution-db-up execution-db-down execution-db-reset execution-run execution-build \
+        app-db-up app-db-down app-db-reset app-run app-build app-seed
 
 GCP_PROJECT_ID ?=
 GCP_ZONE       ?= asia-south1-a
@@ -60,6 +61,25 @@ execution-build: ## Phase 3: compile execution-service (regenerates gRPC stubs)
 execution-run: ## Phase 3: run execution-service locally (requires DB up + judge0 tunnel)
 	mvn -pl execution-service spring-boot:run
 
+# ─── Phase 4: App Service ──────────────────────────────────────────────
+app-db-up: ## Phase 4: start MongoDB for the App Service
+	docker compose -f infra/docker/docker-compose.app.yml up -d
+
+app-db-down: ## Phase 4: stop MongoDB (data preserved)
+	docker compose -f infra/docker/docker-compose.app.yml down
+
+app-db-reset: ## Phase 4: stop MongoDB AND wipe volume (forces init.js to re-run)
+	docker compose -f infra/docker/docker-compose.app.yml down -v
+
+app-build: ## Phase 4: compile app-service (regenerates gRPC stubs)
+	mvn -B -pl app-service -am package -DskipTests
+
+app-run: ## Phase 4: run app-service locally (requires Mongo + auth-service + execution-service up)
+	mvn -pl app-service spring-boot:run
+
+app-seed: ## Phase 4: seed ~10 sample problems into app_db (idempotent)
+	mongosh "mongodb://localhost:27018/app_db" infra/scripts/seed-problems.js
+
 # ─── Future phases (placeholders) ──────────────────────────────────────
 dev: ## TODO(phase-7): bring up the full local stack via docker compose
 	@echo "Not implemented yet — wired up in Phase 7."
@@ -67,8 +87,7 @@ dev: ## TODO(phase-7): bring up the full local stack via docker compose
 logs: ## TODO(phase-7): tail logs for all services
 	@echo "Not implemented yet — wired up in Phase 7."
 
-seed: ## TODO(phase-4): seed sample problems into app_db
-	@echo "Not implemented yet — wired up in Phase 4."
+seed: app-seed ## Phase 4: alias for app-seed
 
 test: ## TODO(phase-1+): run all module tests
 	@echo "Not implemented yet — wired up per service from Phase 1 onwards."

@@ -1,0 +1,32 @@
+# Phase 4 dev stack — app-service's MongoDB.
+#
+# Use this alongside Phase 3 (Postgres + execution-service) and Phase 1 (auth-service):
+#   make execution-db-up
+#   make judge0-tunnel
+#   docker compose -f infra/docker/docker-compose.app.yml up -d
+#
+# Auth Service can use the same mongo container (different DB), so this file
+# also mounts an init script for app_db indexes only.
+#
+# In Phase 7 this gets folded into the master docker-compose.local.yml.
+
+services:
+  app-mongodb:
+    image: mongo:7
+    container_name: codearena-app-mongodb
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_DATABASE: app_db
+    volumes:
+      - app-mongodb-data:/data/db
+      - ./mongo-app-init.js:/docker-entrypoint-initdb.d/mongo-app-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  app-mongodb-data:
