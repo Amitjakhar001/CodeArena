@@ -2,7 +2,8 @@
         gcloud-install gcp-preflight \
         judge0-provision judge0-deploy judge0-tunnel judge0-ssh judge0-stop judge0-teardown \
         execution-db-up execution-db-down execution-db-reset execution-run execution-build \
-        app-db-up app-db-down app-db-reset app-run app-build app-seed
+        app-db-up app-db-down app-db-reset app-run app-build app-seed \
+        gateway-redis-up gateway-redis-down gateway-redis-reset gateway-run gateway-build
 
 GCP_PROJECT_ID ?=
 GCP_ZONE       ?= asia-south1-a
@@ -79,6 +80,22 @@ app-run: ## Phase 4: run app-service locally (requires Mongo + auth-service + ex
 
 app-seed: ## Phase 4: seed ~10 sample problems into app_db (idempotent)
 	mongosh "mongodb://localhost:27018/app_db" infra/scripts/seed-problems.js
+
+# ─── Phase 5: API Gateway ──────────────────────────────────────────────
+gateway-redis-up: ## Phase 5: start Redis for the gateway's rate limiter
+	docker compose -f infra/docker/docker-compose.gateway.yml up -d
+
+gateway-redis-down: ## Phase 5: stop Redis (data preserved)
+	docker compose -f infra/docker/docker-compose.gateway.yml down
+
+gateway-redis-reset: ## Phase 5: stop Redis AND wipe volume
+	docker compose -f infra/docker/docker-compose.gateway.yml down -v
+
+gateway-build: ## Phase 5: compile api-gateway
+	mvn -B -pl api-gateway -am package -DskipTests
+
+gateway-run: ## Phase 5: run api-gateway locally on :8080 (requires Redis + downstream services up)
+	mvn -pl api-gateway spring-boot:run
 
 # ─── Future phases (placeholders) ──────────────────────────────────────
 dev: ## TODO(phase-7): bring up the full local stack via docker compose

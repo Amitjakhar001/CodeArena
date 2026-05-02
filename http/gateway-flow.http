@@ -1,0 +1,147 @@
+### Phase 5 — API Gateway end-to-end smoke test
+###
+### Now everything goes through `gatewayUrl` (localhost:8080). Backend services
+### are only reachable directly via authUrl/appUrl/executionUrl when debugging.
+###
+### Prerequisites:
+###   - make gateway-redis-up   (Redis for rate limiting)
+###   - make execution-db-up    (Postgres)
+###   - make app-db-up          (MongoDB shared by auth + app)
+###   - make judge0-tunnel      (Judge0 reachable on localhost:2358)
+###   - auth-service running on :8083 (default)
+###   - execution-service running on :8081
+###   - app-service running on :8082
+###   - api-gateway running on :8080
+###   - make app-seed
+###
+### Trust boundary check: there is NO X-User-Id in any request below — the
+### gateway sets it after validating the JWT. If a downstream service receives
+### an unauthorized request through the gateway, that's a bug.
+###
+
+### 1. Register through gateway (public bypass — no token required) → 201
+POST {{gatewayUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "phase5tester@example.com",
+  "username": "phase5tester",
+  "password": "supersecret123"
+}
+
+> {%
+    if (response.status === 201) {
+      client.global.set("accessToken", response.body.accessToken);
+    }
+%}
+
+### 2. Login through gateway (public bypass) → 200 + tokens
+POST {{gatewayUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "phase5tester@example.com",
+  "password": "supersecret123"
+}
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
+### 3. /auth/me through gateway — JWT validated, X-User-Id injected → 200
+GET {{gatewayUrl}}/api/v1/auth/me
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("userId", response.body.id);
+%}
+
+### 4. List problems through gateway — JWT required (app route) → 200
+GET {{gatewayUrl}}/api/v1/problems
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("problemId", response.body[0].id);
+    client.global.set("problemSlug", response.body[0].slug);
+%}
+
+### 5. Get problem detail through gateway → 200
+GET {{gatewayUrl}}/api/v1/problems/{{problemSlug}}
+Authorization: Bearer {{accessToken}}
+
+### 6. Submit code through gateway — gateway injects X-User-Id, App accepts → 202
+POST {{gatewayUrl}}/api/v1/submissions
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "problemId": "{{problemId}}",
+  "languageId": 71,
+  "sourceCode": "print('Hello from Phase 5 gateway!')",
+  "customStdin": null
+}
+
+> {%
+    client.global.set("submissionId", response.body.submissionId);
+%}
+
+### 7. Poll submission through gateway → 200
+GET {{gatewayUrl}}/api/v1/submissions/{{submissionId}}
+Authorization: Bearer {{accessToken}}
+
+### 8. Stats through gateway → 200
+GET {{gatewayUrl}}/api/v1/users/me/stats
+Authorization: Bearer {{accessToken}}
+
+###
+### Negative tests — gateway must enforce auth before the request reaches
+### any backend service.
+###
+
+### 9. Missing Authorization on protected route → 401 from gateway
+GET {{gatewayUrl}}/api/v1/problems
+
+### 10. Garbage Bearer token → 401 from gateway (signature check fails)
+GET {{gatewayUrl}}/api/v1/problems
+Authorization: Bearer not.a.real.token
+
+### 11. Tampered token → 401 from gateway
+GET {{gatewayUrl}}/api/v1/problems
+Authorization: Bearer {{accessToken}}xxx
+
+### 12. Spoofed X-User-Id on a public path is stripped by the gateway,
+###     so the request reaches /auth/register without it. Should still 409
+###     (user already exists from step 1) — proves the public bypass strips
+###     the spoofed header rather than trusting it.
+POST {{gatewayUrl}}/api/v1/auth/register
+Content-Type: application/json
+X-User-Id: 1234567890abcdef12345678
+
+{
+  "email": "phase5tester@example.com",
+  "username": "phase5tester",
+  "password": "supersecret123"
+}
+
+###
+### Rate limit demo — fire repeatedly. Auth route is 5/min per IP.
+### After ~10 (initial burst) you should start seeing 429s.
+###
+
+### 13. Hammer login — eventually returns 429
+POST {{gatewayUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "emailOrUsername": "phase5tester@example.com",
+  "password": "wrong-password"
+}
+
+### 14. Gateway health (public)
+GET {{gatewayUrl}}/actuator/health
+
+### 15. Correlation id propagates: send one, expect it back on the response
+GET {{gatewayUrl}}/api/v1/problems
+Authorization: Bearer {{accessToken}}
+X-Correlation-Id: phase5-smoke-test-001
